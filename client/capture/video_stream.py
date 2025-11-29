@@ -1,68 +1,60 @@
 import cv2
 import asyncio
-import time
+from typing import Optional
 from .landmark_extractor import LandmarkExtractor
 from client.ws_client import WebSocketClient
 from shared.schemas import serialize_landmarks
 
 class VideoStream:
+    TARGET_FPS = 30
+    WINDOW_NAME = "GestureDetection Client"
+    
     def __init__(self, ws_client: WebSocketClient):
         self.extractor = LandmarkExtractor()
         self.ws_client = ws_client
         self.cap = cv2.VideoCapture(0)
-        self.FPS = 30 # Tasa de frames objetivo para control (aunque la cámara puede dar más)
 
-    async def start_streaming(self):
-        print("🎥 GestureDetection Cliente listo. Iniciando captura de video...")
+    async def start_streaming(self) -> None:
+        """Start video capture and WebSocket communication in parallel."""
+        print("[VideoStream] Starting video capture...")
         
         if not self.cap.isOpened():
-            print("🔴 Error: No se puede abrir la cámara.")
+            print("[VideoStream] Error: Cannot open camera.")
             return
-
-        last_time = time.time()
         
-        # Usamos asyncio.gather para asegurar que el bucle de captura de video
-        # y la conexión/recepción de comandos del WebSocket corran en paralelo
         await asyncio.gather(
-            self._video_loop(),
+            self._capture_loop(),
             self.ws_client.connect_and_listen()
         )
 
-    async def _video_loop(self):
+    async def _capture_loop(self) -> None:
+        """Main loop for capturing frames, processing landmarks, and sending data."""
         while True:
-            # Captura de Frame
             ret, frame = self.cap.read()
+            
             if not ret:
-                print("🔴 Error al leer el frame.")
+                print("[VideoStream] Error reading frame.")
                 break
 
-            # Invertir el frame para el efecto espejo (más intuitivo)
             frame = cv2.flip(frame, 1)
 
-            # 1. Extracción de Landmarks
             results = self.extractor.process_frame(frame)
-
-            # 2. Serialización y Envío
             data_json = serialize_landmarks(results)
             
-            # Solo enviamos si MediaPipe detectó algo (manos o cuerpo)
             if data_json:
                 # Nota: usamos asyncio.ensure_future o una simple llamada await 
                 # si no queremos bloquear el frame rate. Aquí usamos await para 
                 # priorizar el orden, pero podemos optimizar con ensure_future.
                 await self.ws_client.send_data(data_json)
 
-            # 3. Visualización (Opcional)
             self.extractor.draw_landmarks(frame, results)
-            cv2.imshow("🖐 GestureDetection Cliente", frame)
+            cv2.imshow(self.WINDOW_NAME, frame)
             
-            # 4. Control de Salida
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-            # Control de Frame Rate (para no sobrecargar la red)
-            await asyncio.sleep(1 / self.FPS) 
+            await asyncio.sleep(1 / self.TARGET_FPS)
 
         self.cap.release()
         cv2.destroyAllWindows()
-        print("👋 Cliente GestureDetection detenida.")
+        print("[VideoStream] Video capture stopped.")

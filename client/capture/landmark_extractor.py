@@ -1,59 +1,56 @@
 #type: ignore
 import mediapipe as mp
 import cv2
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class LandmarkResults:
+    """Combined results from hand and pose landmark detection."""
+    multi_hand_landmarks: Optional[any]
+    pose_landmarks: Optional[any]
 
 class LandmarkExtractor:
+    MIN_DETECTION_CONFIDENCE = 0.5
+    MIN_TRACKING_CONFIDENCE = 0.5
+    
     def __init__(self):
-        # Inicializar el modelo de manos y cuerpo de MediaPipe
         self.mp_hands = mp.solutions.hands
         self.mp_pose = mp.solutions.pose
         
-        # Manos: solo necesitamos una mano para la detección de gestos básica
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
-            max_num_hands=1,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+            max_num_hands=2,
+            min_detection_confidence=self.MIN_DETECTION_CONFIDENCE,
+            min_tracking_confidence=self.MIN_TRACKING_CONFIDENCE
         )
         
-        # Pose (Cuerpo): Para futura escalabilidad
         self.pose = self.mp_pose.Pose(
             static_image_mode=False,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+            min_detection_confidence=self.MIN_DETECTION_CONFIDENCE,
+            min_tracking_confidence=self.MIN_TRACKING_CONFIDENCE
         )
 
-    def process_frame(self, frame):
-        """
-        Convierte el frame a RGB y extrae los landmarks de manos y cuerpo.
-        Devuelve el objeto 'results' de MediaPipe.
-        """
-        # MediaPipe espera RGB, OpenCV usa BGR
+    def process_frame(self, frame) -> LandmarkResults:
+        """Extract hand and pose landmarks from a video frame."""
+        # IMPORTANT: MediaPipe expects RGB, OpenCV uses BGR
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        # Procesamiento en paralelo (o secuencial rápido)
         hand_results = self.hands.process(rgb_frame)
         pose_results = self.pose.process(rgb_frame)
-
-        # Combina los resultados en un solo objeto para simplificar el envío
-        class CombinedResults:
-            def __init__(self, hand_res, pose_res):
-                self.multi_hand_landmarks = hand_res.multi_hand_landmarks
-                self.pose_landmarks = pose_res.pose_landmarks
         
-        return CombinedResults(hand_results, pose_results)
+        return LandmarkResults(
+            multi_hand_landmarks=hand_results.multi_hand_landmarks,
+            pose_landmarks=pose_results.pose_landmarks
+        )
 
-    def draw_landmarks(self, frame, results):
-        """
-        Dibuja los landmarks de manos y cuerpo en el frame para visualización.
-        """
+    def draw_landmarks(self, frame, results: LandmarkResults) -> None:
+        """Draw hand and pose landmarks on the frame for visualization."""
         mp_draw = mp.solutions.drawing_utils
         
-        # Dibujar Manos
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
                 mp_draw.draw_landmarks(frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
 
-        # Dibujar Pose (Cuerpo)
         if results.pose_landmarks:
             mp_draw.draw_landmarks(frame, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)

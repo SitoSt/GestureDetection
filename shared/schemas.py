@@ -1,35 +1,37 @@
 #type: ignore
 import json
+from typing import Optional, Dict, Any
 
-def serialize_landmarks(results, frame_b64: str = None):
+def serialize_landmarks(results, frame_b64: Optional[str] = None) -> Optional[str]:
     """
-    Convierte MediaPipe a JSON string plano. SOLO LANDMARKS.
+    Convert MediaPipe landmark results to JSON string.
+    
+    Args:
+        results: MediaPipe results object with hand and pose landmarks
+        frame_b64: Optional base64-encoded frame for future use
+        
+    Returns:
+        JSON string with landmarks data, or None if no landmarks detected
     """
-    data = {}
+    data: Dict[str, Any] = {}
 
-    # --- Manos ---
     if results.multi_hand_landmarks:
-        # Solo tomamos la primera mano
         lm_list = []
         for landmark in results.multi_hand_landmarks[0].landmark:
             lm_list.extend([landmark.x, landmark.y, landmark.z])
         data['hands'] = lm_list
 
-    # --- Cuerpo (Pose) ---
     if results.pose_landmarks:
-        # Añadido para escalabilidad
-        data['pose'] = [val for lm in results.pose_landmarks.landmark for val in (lm.x, lm.y, lm.z)]
+        data['pose'] = [
+            val for lm in results.pose_landmarks.landmark 
+            for val in (lm.x, lm.y, lm.z)
+        ]
     
-    # --- Frame para futura escalabilidad ---
     if frame_b64:
-        data['frame'] = frame_b64 
+        data['frame'] = frame_b64
         
-    if not data:
-        return None
+    return json.dumps(data) if data else None
 
-    return json.dumps(data)
-
-# Comando que el Servidor devuelve al Cliente (sin cambios)
-def create_command_json(gesture: str):
-    """Crea el comando JSON que el servidor envía al cliente."""
+def create_command_json(gesture: str) -> str:
+    """Create JSON command to send from server to client."""
     return json.dumps({"gesture": gesture})
