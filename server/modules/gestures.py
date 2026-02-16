@@ -1,38 +1,34 @@
-#type: ignore
+from collections import deque
 import numpy as np
 import time
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, List
+from shared.config import (
+    PINCH_THRESHOLD_3D, VOLUME_MOVE_THRESHOLD, FIST_DISTANCE_THRESHOLD,
+    COOLDOWN, GESTURE_STABILITY_FRAMES, BUFFER_SIZE, SMOOTHING_WINDOW
+)
+from server.modules.model_loader import GestureModel
 
 class GestureProcessor:
     """
     Advanced gesture detection with 3D analysis, temporal stability, and contextual filtering.
-    
-    Features:
-    - 3D landmark distance calculation for improved accuracy
-    - Multi-frame gesture stability verification
-    - Contextual validation (hand-to-face proximity detection)
-    - Cooldown period to prevent rapid re-triggering
+    Now supports normalization, smoothing, and ML-readiness.
     """
-    
-    # Thresholds
-    PINCH_THRESHOLD_3D = 0.045
-    VOLUME_MOVE_THRESHOLD = 0.025
-    FIST_DISTANCE_THRESHOLD = 0.1
-    
-    # Temporal filtering
-    COOLDOWN = 0.8
-    GESTURE_STABILITY_FRAMES = 5
     
     def __init__(self):
         self.last_action_time = 0
         self.last_index_y: Optional[float] = None
         self.current_stable_gesture: Optional[str] = None
         self.gesture_count = 0
+        
+        # ML & Data Processing
+        self.history = deque(maxlen=SMOOTHING_WINDOW)
+        self.landmark_buffer = deque(maxlen=BUFFER_SIZE)
+        self.model = GestureModel()
 
     def _get_coords(self, lm_list: list, index: int) -> Tuple[float, float, float]:
         """Extract x, y, z coordinates of a specific landmark by index."""
         if len(lm_list) < (index * 3 + 2):
-            return 2.0, 2.0, 0.0
+            return 0.0, 0.0, 0.0
         
         x = lm_list[index * 3]
         y = lm_list[index * 3 + 1]
@@ -43,15 +39,57 @@ class GestureProcessor:
         """Calculate 3D Euclidean distance between two points."""
         return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + (p1[2] - p2[2])**2)
 
+    def _smooth_landmarks(self, lm_list: List[float]) -> List[float]:
+        """Apply moving average smoothing to landmarks."""
+        self.history.append(lm_list)
+        
+        if not self.history:
+            return lm_list
+            
+        # Compute mean across history for each coordinate
+        # history is [ [x1, y1, z1, ...], [x2, y2, z2, ...], ... ]
+        smoothed = np.mean(self.history, axis=0).tolist()
+        return smoothed
+
+    def _normalize_landmarks(self, lm_list: List[float]) -> List[float]:
+        """
+        Normalize landmarks: relative to wrist (index 0) and scaled by hand size.
+        """
+        if not lm_list or len(lm_list) < 3:
+            return []
+
+        # Get wrist coordinates
+        wrist_x, wrist_y, wrist_z = lm_list[0], lm_list[1], lm_list[2]
+        
+        normalized = []
+        max_dist = 0.0
+        
+        # Shift relative to wrist and find max distance for scaling
+        temp_points = []
+        for i in range(0, len(lm_list), 3):
+            if i + 2 >= len(lm_list):
+                break
+            
+            x, y, z = lm_list[i], lm_list[i+1], lm_list[i+2]
+            dx, dy, dz = x - wrist_x, y - wrist_y, z - wrist_z
+            
+            dist = np.sqrt(dx*dx + dy*dy + dz*dz)
+            if dist > max_dist:
+                max_dist = dist
+            
+            temp_points.append((dx, dy, dz))
+            
+        # Scale
+        scale = max_dist if max_dist > 0 else 1.0
+        
+        for dx, dy, dz in temp_points:
+            normalized.extend([dx / scale, dy / scale, dz / scale])
+            
+        return normalized
+
     def _detect_raw_gesture(self, lm_list: list) -> Optional[str]:
         """
         Detect gesture based on 3D hand shape and 2D (Y-axis) finger positions.
-        
-        Returns:
-            - "pinch_active": Thumb and index finger close together
-            - "next_track_shape": Two fingers extended (index and middle)
-            - "play_pause_shape": Fist gesture
-            - None: No gesture detected
         """
         try:
             thumb_tip = self._get_coords(lm_list, 4)
@@ -64,14 +102,15 @@ class GestureProcessor:
             ring_pip_y = self._get_coords(lm_list, 14)[1]
             pinky_pip_y = self._get_coords(lm_list, 18)[1]
             
-            wrist_y = self._get_coords(lm_list, 0)[1]
+            # Unused currently but kept for structure
+            # wrist_y = self._get_coords(lm_list, 0)[1]
         except IndexError:
             return None
         
         dist_thumb_index_3d = self._get_distance_3d(thumb_tip, index_tip)
         
         # 1. Pinch detection (volume control activation)
-        if dist_thumb_index_3d < self.PINCH_THRESHOLD_3D:
+        if dist_thumb_index_3d < PINCH_THRESHOLD_3D:
             return "pinch_active"
         
         # 2. Two-finger gesture (next track)
@@ -101,12 +140,6 @@ class GestureProcessor:
     def _handle_volume(self, index_tip_y: float) -> Optional[str]:
         """
         Handle volume control based on vertical (Y-axis) movement of index finger.
-        
-        Args:
-            index_tip_y: Y coordinate of index finger tip
-            
-        Returns:
-            "volume_up", "volume_down", or None
         """
         if self.last_index_y is None:
             self.last_index_y = index_tip_y
@@ -114,42 +147,34 @@ class GestureProcessor:
         
         dy = self.last_index_y - index_tip_y
         
-        if dy > self.VOLUME_MOVE_THRESHOLD:
+        if dy > VOLUME_MOVE_THRESHOLD:
             self.last_index_y = index_tip_y
             return "volume_up"
-        elif dy < -self.VOLUME_MOVE_THRESHOLD:
+        elif dy < -VOLUME_MOVE_THRESHOLD:
             self.last_index_y = index_tip_y
             return "volume_down"
         
         return None
 
-    def is_gesture_contextually_valid(self, data: Dict) -> bool:
+    def is_gesture_contextually_valid(self, data: Dict, wrist_coords: Tuple[float, float, float]) -> bool:
         """
         Contextual validation to filter false positives (e.g., hand near face).
-        
-        This prevents play/pause detection when the fist is near the mouth/face
-        (e.g., smoking, eating, scratching).
-        
-        Args:
-            data: Dictionary containing 'hands' and optionally 'pose' landmarks
-            
-        Returns:
-            True if gesture is valid, False if it should be filtered out
+        Requires original data for pose, and smoothed wrist coords.
         """
         if self.current_stable_gesture != "play_pause_shape":
             return True
         
-        if 'pose' not in data or 'hands' not in data:
+        if 'pose' not in data:
             return True
         
         pose_lm = data['pose']
-        hand_lm = data['hands']
         
         try:
-            nose_y = pose_lm[1]
+            # Pose landmarks 0 is nose
             nose_x = pose_lm[0]
+            nose_y = pose_lm[1]
             
-            wrist_x, wrist_y, _ = self._get_coords(hand_lm, 0)
+            wrist_x, wrist_y, _ = wrist_coords
             
             # Filter out if wrist is too close to face
             if abs(wrist_y - nose_y) < 0.25 and abs(wrist_x - nose_x) < 0.25:
@@ -162,34 +187,42 @@ class GestureProcessor:
     def process_landmarks(self, data: Dict) -> Optional[str]:
         """
         Main processing function with filtering, stability, and contextual validation.
-        
-        Processing pipeline:
-        1. Cooldown check (prevent rapid re-triggering)
-        2. Raw gesture detection (shape analysis)
-        3. Pinch handling (volume control)
-        4. Stability verification (multi-frame confirmation)
-        5. Contextual validation (false positive filtering)
-        
-        Args:
-            data: Dictionary with 'hands' and optionally 'pose' landmarks
-            
-        Returns:
-            Gesture command string or None
         """
-        now = time.time()
-        
-        if now - self.last_action_time < self.COOLDOWN:
-            return None
-        
         if 'hands' not in data:
             self.current_stable_gesture = None
             self.gesture_count = 0
             self.last_index_y = None
             return None
         
-        lm_list = data['hands']
-        index_tip_y = self._get_coords(lm_list, 8)[1]
+        now = time.time()
         
+        raw_lm_list = data['hands']
+        
+        # 1. Smoothing
+        smoothed_lm_list = self._smooth_landmarks(raw_lm_list)
+        
+        # 2. Normalization & Buffering (for ML)
+        normalized_lm = self._normalize_landmarks(smoothed_lm_list)
+        self.landmark_buffer.append(normalized_lm)
+        
+        # 3. Cooldown Check
+        if now - self.last_action_time < COOLDOWN:
+            return None
+        
+        # 3. Model Prediction (Placeholder)
+        ml_gesture, ml_confidence = self.model.predict(list(self.landmark_buffer))
+        if ml_gesture and ml_confidence > 0.8:
+             print(f"[GestureProcessor] ML Predicted: {ml_gesture} ({ml_confidence:.2f})")
+             # Could return ml_gesture here in the future
+        
+        # 4. Legacy Heuristic Detection (using smoothed landmarks)
+        lm_list = smoothed_lm_list # Use smoothed for heuristics
+        
+        try:
+           index_tip_y = self._get_coords(lm_list, 8)[1]
+        except:
+           return None
+
         raw_gesture = self._detect_raw_gesture(lm_list)
         
         # Handle pinch (volume control)
@@ -219,8 +252,9 @@ class GestureProcessor:
             self.gesture_count = 0
         
         # Confirmation by stability and context
-        if self.gesture_count >= self.GESTURE_STABILITY_FRAMES:
-            if self.is_gesture_contextually_valid(data):
+        if self.gesture_count >= GESTURE_STABILITY_FRAMES:
+            wrist_coords = self._get_coords(lm_list, 0)
+            if self.is_gesture_contextually_valid(data, wrist_coords):
                 command = self.current_stable_gesture.replace("_shape", "")
                 self.last_action_time = now
                 self.gesture_count = 0
