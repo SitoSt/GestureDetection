@@ -39,7 +39,7 @@ class VideoStream:
             frame = cv2.flip(frame, 1)
 
             results = self.extractor.process_frame(frame)
-            data_json = serialize_landmarks(results)
+            data_json = serialize_landmarks(results, client_id=self.ws_client.client_id)
             
             if data_json:
                 # Nota: usamos asyncio.ensure_future o una simple llamada await 

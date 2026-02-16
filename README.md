@@ -4,15 +4,12 @@ A real-time hand gesture recognition system for controlling media playback using
 
 ## Overview
 
-GestureDetection is a client-server application that uses MediaPipe for hand tracking and custom gesture detection algorithms to enable hands-free control of media applications. The system captures hand landmarks from a webcam, processes them on a server, and executes corresponding actions on the client.
+GestureDetection is a client-server application that uses MediaPipe for hand tracking and a model-ready inference pipeline to enable hands-free control of media applications. The system captures hand landmarks from a webcam, processes them on a server, and executes corresponding actions on the client.
 
 ## Features
 
 - **Real-time Hand Tracking**: Uses MediaPipe for accurate hand landmark detection
-- **Gesture Recognition**: Detects multiple gestures including:
-  - Pinch + vertical movement for volume control
-  - Two-finger gesture for next track
-  - Fist gesture for play/pause
+- **ML-Ready Pipeline**: Versioned payloads prepared for model-based inference
 - **Client-Server Architecture**: Decoupled processing using WebSocket communication
 - **Low Latency**: Optimized for real-time performance at 30 FPS
 - **Extensible Design**: Modular architecture ready for AI-based enhancements
@@ -24,36 +21,21 @@ graph TB
     subgraph Client["Client (MacOS/Windows/Linux)"]
         Camera[Webcam] --> VideoStream[VideoStream]
         VideoStream --> LandmarkExtractor[LandmarkExtractor<br/>MediaPipe]
-        LandmarkExtractor --> Serializer[serialize_landmarks]
+        LandmarkExtractor --> Serializer[serialize_landmarks<br/>versioned JSON]
         Serializer --> WSClient[WebSocketClient]
-        WSClient -->|Send Landmarks| Network{Network}
+        WSClient -->|Send Payload| Network{Network}
         Network -->|Receive Commands| WSClient
         WSClient --> ActionExecutor[ActionExecutor]
         ActionExecutor --> Actions[Media Control Actions]
     end
     
     subgraph Server["Server (Ubuntu/Any)"]
-        Network -->|Landmarks JSON| WSServer[WebSocketServer]
-        WSServer --> GestureProcessor[GestureProcessor]
-        GestureProcessor --> Detection{Gesture<br/>Detection}
-        Detection -->|Pinch + Movement| VolumeControl[Volume Control]
-        Detection -->|Two Fingers| NextTrack[Next Track]
-        Detection -->|Fist| PlayPause[Play/Pause]
-        VolumeControl --> Response[create_command_json]
-        NextTrack --> Response
-        PlayPause --> Response
+        Network -->|Payload JSON| WSServer[WebSocketServer]
+        WSServer --> ModelRunner[ModelRunner]
+        ModelRunner --> Response[create_command_json]
         Response --> WSServer
         WSServer -->|Command JSON| Network
     end
-    
-    subgraph Future["Future Enhancements"]
-        PostureModule[Posture Detection<br/>Full Body Tracking]
-        ContextManager[Context Manager<br/>AI-based Filtering]
-        PostureModule -.-> GestureProcessor
-        ContextManager -.-> GestureProcessor
-    end
-    
-    style Future fill:#f0f0f0,stroke:#999,stroke-dasharray: 5 5
 ```
 
 ## Project Structure
@@ -69,9 +51,12 @@ GestureDetection/
 │   ├── client_main.py           # Client entry point
 │   ├── ws_client.py             # WebSocket client
 │   └── data_collector.py        # Training data collection tool
+├── core/                        # Model interfaces and mocks
+│   ├── gesture_model.py         # Model interface
+│   └── mock_gesture_model.py    # Placeholder predictor
 ├── server/                      # Server-side code
 │   ├── modules/
-│   │   ├── gestures.py          # Gesture detection logic
+│   │   ├── gestures.py          # Legacy heuristics (not used)
 │   │   ├── posture.py           # (Future) Full-body pose analysis
 │   │   └── context_manager.py   # (Future) AI-based context filtering
 │   └── ws_server.py             # WebSocket server
@@ -135,10 +120,9 @@ The server will start listening on `ws://0.0.0.0:8765` by default.
    ```
 
 3. **Use gestures**:
-   - **Volume Up/Down**: Pinch thumb and index finger, then move hand up or down
-   - **Next Track**: Show two fingers (index and middle) pointing up
-   - **Play/Pause**: Make a fist
-   - **Quit**: Press 'q' in the video window
+    - The current model is a mock and will not emit gestures yet.
+    - Press 'q' in the video window to quit.
+
 
 ## Data Collection (Optional)
 
@@ -160,12 +144,12 @@ Follow the on-screen prompts to record gesture sequences. Data will be saved in 
 
 ## Gesture Detection Algorithm
 
-The current implementation uses geometric analysis of hand landmarks:
+The current implementation is model-first and ships with a mock predictor while the dataset is prepared:
 
-1. **Landmark Extraction**: MediaPipe detects 21 hand landmarks in 3D space
-2. **Distance Calculation**: Euclidean distances between key points (thumb, index, wrist)
-3. **Pattern Matching**: Threshold-based detection for specific hand configurations
-4. **Temporal Filtering**: Action history buffer prevents false positives from repeated gestures
+1. **Landmark Extraction**: MediaPipe detects hand and pose landmarks in 3D space
+2. **Payload Versioning**: Client sends versioned JSON for stable evolution
+3. **Model Inference**: A plug-in model will classify gestures (mock returns no gesture)
+4. **Action Dispatch**: Recognized gestures map to client actions
 
 ## Future Enhancements
 
@@ -181,7 +165,7 @@ The current implementation uses geometric analysis of hand landmarks:
 
 ### Machine Learning
 - Train custom gesture classifier using collected data
-- Adaptive threshold adjustment based on user behavior
+- Add model loading/inference pipeline on the server
 - Personalized gesture recognition
 
 ### Enhanced Actions
@@ -194,7 +178,7 @@ The current implementation uses geometric analysis of hand landmarks:
 - **Frame Rate**: Target 30 FPS for smooth real-time operation
 - **Network Latency**: Local network recommended for minimal delay
 - **CPU Usage**: MediaPipe is optimized for real-time performance
-- **False Positive Reduction**: Action history buffer and threshold tuning
+- **False Positive Reduction**: Model confidence thresholds and post-processing
 
 ## Troubleshooting
 
@@ -209,9 +193,9 @@ The current implementation uses geometric analysis of hand landmarks:
 - Ensure correct IP address and port in client configuration
 
 ### Gestures Not Detected
-- Ensure good lighting conditions
-- Keep hand clearly visible to camera
-- Adjust detection thresholds in `GestureProcessor` if needed
+- This is expected while the mock model is active
+- Ensure good lighting conditions for future datasets
+- Verify the client is sending versioned payloads
 
 ## Contributing
 

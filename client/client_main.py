@@ -4,9 +4,11 @@ from client.capture.video_stream import VideoStream
 
 SERVER_HOST = "green-house.local"
 SERVER_PORT = 8765
+CLIENT_ID = "client"
+
 
 def main():
-    ws_client = WebSocketClient(host=SERVER_HOST, port=SERVER_PORT)
+    ws_client = WebSocketClient(host=SERVER_HOST, port=SERVER_PORT, client_id=CLIENT_ID)
     video_stream = VideoStream(ws_client)
     
     try:

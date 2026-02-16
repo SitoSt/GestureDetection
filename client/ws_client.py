@@ -5,8 +5,9 @@ from typing import Optional
 from client.actions.action_executor import execute_action
 
 class WebSocketClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765):
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765, client_id: str = "client"):
         self.uri = f"ws://{host}:{port}"
+        self.client_id = client_id
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
 
     async def connect_and_listen(self) -> None:
