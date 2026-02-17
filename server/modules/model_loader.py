@@ -38,10 +38,20 @@ class GestureModel:
             # For now, print error so server creates it but maybe fails on predict.
 
     def _load_model(self):
+        from shared.config import BUFFER_SIZE
+        
         self.interpreter = tflite.Interpreter(model_path=self.model_path)
         self.interpreter.allocate_tensors()
         self.input_details = self.interpreter.get_input_details()
         self.output_details = self.interpreter.get_output_details()
+        
+        # Validate logic vs model
+        input_shape = self.input_details[0]['shape'] # [1, 20, 162]
+        model_time_steps = input_shape[1]
+        
+        if model_time_steps != BUFFER_SIZE:
+             print(f"[GestureModel] CRITICAL WARNING: Model expects {model_time_steps} frames, but config BUFFER_SIZE is {BUFFER_SIZE}.")
+             # We could raise an error here, but for now a loud warning allows debugging.
 
     def _load_labels(self):
         if os.path.exists(self.label_map_path):

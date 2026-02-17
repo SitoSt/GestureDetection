@@ -6,7 +6,7 @@ from server.modules.gestures import GestureProcessor
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8765
 
-async def handle_client(websocket, path):
+async def handle_client(websocket):
     """Handle incoming WebSocket connections and process gesture data."""
     print("[Server] Client connected.")
     
