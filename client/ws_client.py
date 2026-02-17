@@ -5,10 +5,11 @@ from typing import Optional
 from client.actions.action_executor import execute_action
 
 class WebSocketClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765, client_id: str = "client"):
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765, client_id: str = "client", on_command_callback=None):
         self.uri = f"ws://{host}:{port}"
         self.client_id = client_id
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
+        self.on_command_callback = on_command_callback
 
     async def connect_and_listen(self) -> None:
         """Establish WebSocket connection and listen for commands from server."""
@@ -43,6 +44,8 @@ class WebSocketClient:
                 gesture = command.get("gesture")
                 if gesture:
                     execute_action(gesture)
+                    if self.on_command_callback:
+                        self.on_command_callback(gesture)
                 
             except websockets.exceptions.ConnectionClosedOK:
                 print("[WebSocket] Server connection closed.")

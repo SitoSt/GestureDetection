@@ -1,10 +1,34 @@
 """
 Action executor for gesture-triggered commands.
-In a production environment, this would integrate with OS-level APIs
-for media control (e.g., keyboard module, AppleScript, or D-Bus).
+Integrates with OS-level APIs via pyautogui for media control.
 """
+import pyautogui
+import platform
 
-ACTION_MAP = {
+# OS-specific key mapping
+SYSTEM = platform.system()
+
+if SYSTEM == "Darwin":  # macOS
+    # macOS media keys are often handled differently or require specific key codes.
+    # pyautogui support for media keys on macOS can be limited.
+    # We use standard shortcuts where possible or specific keys.
+    KEY_MAP = {
+        "play_pause": "playpause",
+        "next_track": "nexttrack",
+        "prev_track": "prevtrack",
+        "volume_up": "volumeup",
+        "volume_down": "volumedown",
+    }
+else: # Windows / Linux
+    KEY_MAP = {
+        "play_pause": "playpause",
+        "next_track": "nexttrack",
+        "prev_track": "prevtrack",
+        "volume_up": "volumeup",
+        "volume_down": "volumedown",
+    }
+
+ACTION_DISPLAY_MAP = {
     "play_pause": "⏯️  Play/Pause",
     "next_track": "⏭️  Next Track",
     "prev_track": "⏮️  Previous Track",
@@ -15,9 +39,19 @@ ACTION_MAP = {
 
 def execute_action(gesture: str) -> None:
     """Execute a local action based on the detected gesture."""
-    action_description = ACTION_MAP.get(gesture)
+    action_description = ACTION_DISPLAY_MAP.get(gesture)
+    key = KEY_MAP.get(gesture)
     
     if action_description:
-        print(f"[Action] {action_description} (gesture: {gesture})")
+        print(f"[Action] Executing: {action_description}")
+        
+        if key:
+            try:
+                pyautogui.press(key)
+            except Exception as e:
+                print(f"[Action] Error pressing key {key}: {e}")
+        elif gesture == "open_spotify":
+             # Example custom logic
+             pass
     else:
         print(f"[Action] Unknown gesture: {gesture}")
