@@ -1,7 +1,12 @@
 import os
 import json
+try:
+    # Try importing tflite_runtime first (lightweight)
+    import tflite_runtime.interpreter as tflite
+except ImportError:
+    # Fallback to full TensorFlow
+    import tensorflow.lite as tflite
 import numpy as np
-import tensorflow as tf
 from typing import List, Optional, Tuple
 
 class GestureModel:
@@ -33,7 +38,7 @@ class GestureModel:
             # For now, print error so server creates it but maybe fails on predict.
 
     def _load_model(self):
-        self.interpreter = tf.lite.Interpreter(model_path=self.model_path)
+        self.interpreter = tflite.Interpreter(model_path=self.model_path)
         self.interpreter.allocate_tensors()
         self.input_details = self.interpreter.get_input_details()
         self.output_details = self.interpreter.get_output_details()

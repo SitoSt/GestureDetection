@@ -9,4 +9,15 @@ GESTURE_STABILITY_FRAMES = 5
 BUFFER_SIZE = 20  # Number of frames to keep in history
 SMOOTHING_WINDOW = 3  # Number of frames for moving average smoothing
 MODEL_CONFIDENCE_THRESHOLD = 0.85
+INFERENCE_INTERVAL = 3 # Run inference every N frames
+
+# Dynamic Thresholds (override default if present)
+GESTURE_THRESHOLDS = {
+    "next_track": 0.8,
+    "prev_track": 0.8,
+    "play_pause": 0.85,
+    "volume_up": 0.9,
+    "volume_down": 0.9,
+    # "delete": 0.95 # Future use
+}
 

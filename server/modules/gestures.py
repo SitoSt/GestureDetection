@@ -5,7 +5,7 @@ from typing import Tuple, Optional, Dict, List
 from shared.config import (
     PINCH_THRESHOLD_3D, VOLUME_MOVE_THRESHOLD, FIST_DISTANCE_THRESHOLD,
     COOLDOWN, GESTURE_STABILITY_FRAMES, BUFFER_SIZE, SMOOTHING_WINDOW,
-    MODEL_CONFIDENCE_THRESHOLD
+    MODEL_CONFIDENCE_THRESHOLD, INFERENCE_INTERVAL, GESTURE_THRESHOLDS
 )
 from server.modules.model_loader import GestureModel
 
@@ -20,6 +20,7 @@ class GestureProcessor:
         self.last_index_y: Optional[float] = None
         self.current_stable_gesture: Optional[str] = None
         self.gesture_count = 0
+        self.frame_counter = 0
         
         # ML & Data Processing
         self.history = deque(maxlen=SMOOTHING_WINDOW)
@@ -251,25 +252,30 @@ class GestureProcessor:
             pass
 
         # 5. ML Model Prediction
-        # Only predict if we have enough history
-        if len(self.landmark_buffer) == BUFFER_SIZE:
+        # Only predict if we have enough history AND it's the right interval
+        self.frame_counter += 1
+        if len(self.landmark_buffer) == BUFFER_SIZE and (self.frame_counter % INFERENCE_INTERVAL == 0):
             ml_gesture, ml_confidence = self.model.predict(list(self.landmark_buffer))
             
-            if ml_gesture and ml_confidence > MODEL_CONFIDENCE_THRESHOLD:
-                # Filter "negative" classes
-                if "NO_ACTION" in ml_gesture or "falso_positivo" in ml_gesture or "no_accion" in ml_gesture:
-                    return None
+            if ml_gesture:
+                # Dynamic Threshold Lookup
+                threshold = GESTURE_THRESHOLDS.get(ml_gesture, MODEL_CONFIDENCE_THRESHOLD)
                 
-                # Clean gesture name
-                # e.g., "play_pause_INTENCIONAL" -> "play_pause"
-                # "next_track_INTENCIONAL" -> "next_track"
-                command = ml_gesture
-                if "_INTENCIONAL" in command:
-                    command = command.replace("_INTENCIONAL", "")
-                
-                # Return immediately
-                print(f"[GestureProcessor] ML Action: {command} ({ml_confidence:.2f})")
-                self.last_action_time = now
-                return command
-            
+                # Clean gesture name for lookup if needed (e.g. handle suffixes)
+                clean_name = ml_gesture.replace("_INTENCIONAL", "")
+                threshold = GESTURE_THRESHOLDS.get(clean_name, threshold)
+
+                if ml_confidence > threshold:
+                    # Filter "negative" classes
+                    if "NO_ACTION" in ml_gesture or "falso_positivo" in ml_gesture or "no_accion" in ml_gesture:
+                        return None
+                    
+                    # Use clean name
+                    command = clean_name
+                    
+                    # Return immediately
+                    print(f"[GestureProcessor] ML Action: {command} ({ml_confidence:.2f} > {threshold})")
+                    self.last_action_time = now
+                    return command
+        
         return None
