@@ -8,3 +8,5 @@ COOLDOWN = 0.8
 GESTURE_STABILITY_FRAMES = 5
 BUFFER_SIZE = 20  # Number of frames to keep in history
 SMOOTHING_WINDOW = 3  # Number of frames for moving average smoothing
+MODEL_CONFIDENCE_THRESHOLD = 0.85
+

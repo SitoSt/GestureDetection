@@ -23,7 +23,7 @@ def build_model(input_shape, num_classes):
     """Build GRU model."""
     model = Sequential([
         Input(shape=input_shape),
-        GRU(64, return_sequences=False),
+        GRU(64, return_sequences=False, unroll=True),
         Dropout(0.2),
         Dense(32, activation='relu'),
         Dense(num_classes, activation='softmax')
