@@ -27,4 +27,7 @@ Thumbs.db
 
 # Project specific
 /training_data
-*.log
+
+# ML Pipeline
+ml_pipeline/data/
+ml_pipeline/models/
